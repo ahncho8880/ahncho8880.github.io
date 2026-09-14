@@ -1,0 +1,10 @@
+%%{init: {"theme":"neutral","flowchart":{"curve":"linear"},"themeVariables":{"primaryColor":"#FFFFFF","primaryBorderColor":"#CBD5E1","lineColor":"#64748B","primaryTextColor":"#1F2937"}}}%%
+flowchart TB
+    A["블록체인 Write 요청"] --> B["요청 유형별 큐<br/>ConcurrentLinkedQueue"]
+    B --> C["PublishSubject<br/>처리 신호 발행"]
+    C --> D["RxJava 단일 Scheduler"]
+    D --> E["처리 시점의 대기 요청<br/>최대 20건 추출"]
+    E --> F["하나의 배치 트랜잭션으로 구성"]
+    F --> G["블록체인 순차 요청·응답 대기"]
+    G --> H["요청 식별자 기준 결과 매핑"]
+    H --> I["CompletableFuture 완료<br/>또는 DB 상태·이력 반영"]

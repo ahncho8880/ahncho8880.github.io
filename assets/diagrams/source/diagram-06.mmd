@@ -1,0 +1,8 @@
+flowchart TB
+    A["결제 준비 API<br/>주문·블록체인 요청 식별자 연결 · PENDING"] --> B["사용자 서명 생성 API<br/>Redis에 TTL 기반 임시 보관"]
+    B --> C["쇼핑몰 결제 확정 Webhook"]
+    C --> D{"주문 상태·서명 확인"}
+    D -->|이미 PAID| E["차감 재실행 없이 기존 결과 반환"]
+    D -->|PENDING · 서명 있음| F["저장된 서명으로 블록체인 차감"]
+    F -->|성공| G["PAID 반영 · Redis 서명 삭제"]
+    D -->|PENDING · 서명 없음| H["EXPIRED 반영"]

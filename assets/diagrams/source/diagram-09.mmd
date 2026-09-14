@@ -1,0 +1,29 @@
+%%{init: {"theme":"neutral","themeVariables":{"actorBkg":"#FFFFFF","actorBorder":"#CBD5E1","actorTextColor":"#1F2937","signalColor":"#64748B","signalTextColor":"#1F2937","noteBkgColor":"#FFFFFF","noteBorderColor":"#CBD5E1"},"sequence":{"mirrorActors":false}}}%%
+sequenceDiagram
+    participant U as 사용자
+    participant A as API 서버
+    participant D as DB
+    participant B as 블록체인
+
+    U->>A: 챌린지 참가 요청
+    rect rgb(239, 246, 255)
+        A->>D: [짧은 트랜잭션 ①] 정원 확보
+        A->>D: 조건부 UPDATE
+        D-->>A: 정원 확보 성공
+        A->>D: 참가 저장 · status = PROCESSING · COMMIT
+        D-->>A: 커밋 완료 · 행 잠금 해제
+    end
+
+    A->>B: 포인트 차감
+    alt 차감 성공
+        B-->>A: 성공 확정
+        A->>D: status = BURN_COMPLETED · COMMIT
+    else 차감 확정 실패
+        B-->>A: 실패 확정
+        A->>D: 참가 취소 상태 · 정원 카운터 감소 · COMMIT
+    else 응답 타임아웃
+        B-->>A: 대기 시간 초과 · 즉시 참가 취소
+        A->>D: 참가 취소 상태 · 정원 카운터 감소 · COMMIT
+    end
+    A->>D: 결과 반영 · 짧은 DB 트랜잭션 · COMMIT
+    A-->>U: 참가 처리 결과

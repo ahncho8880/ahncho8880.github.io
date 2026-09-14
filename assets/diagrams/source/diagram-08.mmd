@@ -1,0 +1,19 @@
+%%{init: {"theme":"neutral","flowchart":{"curve":"linear"},"themeVariables":{"primaryColor":"#FFFFFF","primaryBorderColor":"#CBD5E1","lineColor":"#64748B","primaryTextColor":"#1F2937"}}}%%
+flowchart TB
+    subgraph OLD["개선 전 · 외부 호출까지 하나의 DB 트랜잭션"]
+        direction LR
+        O1["행 잠금·DB 처리"] --> O2["블록체인 조회·차감"]
+        O2 --> O3["커밋·잠금 해제"]
+    end
+
+    subgraph NEW["개선 후 · DB 트랜잭션 분리"]
+        direction LR
+        N1["조건부 UPDATE · 정원 확보 요청 직렬화<br/>참가 저장·커밋·잠금 해제"] --> N2["블록체인 차감"]
+        N2 --> N3["성공 상태 반영 또는 참가 취소<br/>커밋"]
+    end
+
+    OLD -->|트랜잭션 범위 축소| NEW
+    style OLD fill:#F8FAFC,stroke:#94A3B8
+    style NEW fill:#FFFFFF,stroke:#CBD5E1
+    style N1 fill:#EFF6FF,stroke:#3B82F6
+    style N3 fill:#EFF6FF,stroke:#3B82F6

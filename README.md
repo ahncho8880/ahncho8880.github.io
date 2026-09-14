@@ -16,11 +16,7 @@
 
 블록체인 Write 요청의 비동기 배치 설계에서 출발해, 운영 장애를 계기로 공유 비동기 풀의 무기한 대기 문제를 개선하고 실행 구조를 버추얼 스레드 기반으로 전환했다. 동일한 Write 트랜잭션 미들웨어를 단계적으로 고도화한 과정이다.
 
-```mermaid
-flowchart LR
-    A["1-1 · 비동기 배치 설계<br/>Write 요청 수집·최대 20건·순차 전송"] --> B["1-2 · 운영 안정화<br/>Future 완료·대기 제한·DB 점유 분리"]
-    B --> C["1-3 · 실행 구조 전환<br/>보상 작업의 버추얼 스레드 전환"]
-```
+![블록체인 Write 트랜잭션 미들웨어 고도화 과정](assets/diagrams/diagram-01.svg)
 
 ### 1-1. 블록체인 Write 트랜잭션 비동기 배치 처리 설계
 
@@ -47,18 +43,7 @@ flowchart LR
 
 여러 유형의 블록체인 Write 요청을 개별 전송하지 않고 하나의 배치 트랜잭션으로 처리했다. 요청 유형별 인메모리 큐에 데이터를 적재하고, RxJava 단일 Scheduler가 처리 시점에 큐에서 최대 20건을 꺼내 순차 전송했다. 결과가 필요한 호출부에는 요청별 CompletableFuture로 처리 결과를 전달했다.
 
-```mermaid
-%%{init: {"theme":"neutral","flowchart":{"curve":"linear"},"themeVariables":{"primaryColor":"#FFFFFF","primaryBorderColor":"#CBD5E1","lineColor":"#64748B","primaryTextColor":"#1F2937"}}}%%
-flowchart TB
-    A["블록체인 Write 요청"] --> B["요청 유형별 큐<br/>ConcurrentLinkedQueue"]
-    B --> C["PublishSubject<br/>처리 신호 발행"]
-    C --> D["RxJava 단일 Scheduler"]
-    D --> E["처리 시점의 대기 요청<br/>최대 20건 추출"]
-    E --> F["하나의 배치 트랜잭션으로 구성"]
-    F --> G["블록체인 순차 요청·응답 대기"]
-    G --> H["요청 식별자 기준 결과 매핑"]
-    H --> I["CompletableFuture 완료<br/>또는 DB 상태·이력 반영"]
-```
+![블록체인 Write 요청 비동기 배치 처리 구조](assets/diagrams/diagram-02.svg)
 
 *20건이 모일 때까지 기다리지 않고, 처리 신호를 받은 시점에 큐에 들어 있던 요청을 최대 20건까지 묶었다.*
 
@@ -98,14 +83,7 @@ flowchart TB
 
 #### 장애 전파 경로
 
-```mermaid
-flowchart LR
-    A["RPC 연결 오류<br/>Nonce 조회·배치 요청 생성 실패"] --> B["예외 경로의 Future 완료 누락"]
-    B --> C["join() 무기한 대기"]
-    C --> D["공유 비동기 풀의 스레드 점유 지속"]
-    D --> E["일반 비동기 작업의 실행 자리 소진"]
-    E --> F["해당 작업에 의존하는 기능 정체"]
-```
+![블록체인 배치 응답 무기한 대기의 장애 전파 경로](assets/diagrams/diagram-03.svg)
 
 RPC 연결 오류 이후 Future 완료가 누락되어 보상 작업이 무기한 대기에 빠졌다. 대기 시간 제한이 없고 일반 작업과 비동기 스레드 풀을 공유했기 때문에, 보상 처리의 문제가 일반 비동기 작업으로 확산됐다.
 
@@ -133,28 +111,7 @@ RPC 연결 오류 이후 Future 완료가 누락되어 보상 작업이 무기�
 
 *동시 실행 한도 20개는 진행 중인 보상 작업 수, 배치 한도 20건은 트랜잭션 하나에 담는 요청 수다.*
 
-```mermaid
-flowchart TB
-    subgraph GENERAL["일반 작업"]
-        A["일반 작업 접수"] --> B["일반 비동기 스레드 풀"]
-    end
-    subgraph REWARD["보상 작업 · 플랫폼 스레드 기반"]
-        C["보상 작업 접수"] --> S{"실행 자리 있음?"}
-        S -->|있음 · 즉시 실행| E["보상 비동기 실행<br/>동시 최대 20개"]
-        S -->|없음| D["보상 비동기 작업 대기 큐<br/>Runnable 보관"]
-    end
-    subgraph CHAIN["블록체인 배치 처리"]
-        F["블록체인 요청 수집 큐"] --> G["최대 20건을 꺼내<br/>하나의 트랜잭션으로 구성"]
-        G --> H["블록체인 처리·요청별 결과 전달"]
-    end
-    E --> F
-    H --> I["각 보상 작업의 DB 상태 반영"]
-    I --> J["작업 종료·실행 자리 반환"]
-    J --> K["대기 큐에서 다음 작업 조회"]
-    D -.->|대기 작업| K
-    K -->|작업 있음| E
-    K -->|작업 없음| L["추가 작업 실행 없음"]
-```
+![플랫폼 스레드 기반 보상 작업의 실행 제한과 배치 처리 구조](assets/diagrams/diagram-04.svg)
 
 #### 핵심 구현
 
@@ -206,28 +163,7 @@ Java 21 전환을 계기로 보상 작업을 실행할 때마다 새 버추얼 �
 
 *Runnable 큐에서 실행을 기다리는 시간은 Future의 60초 제한에 포함되지 않는다. 버추얼 스레드 전환 자체가 블록체인의 처리 속도를 높이는 것은 아니다.*
 
-```mermaid
-flowchart TB
-    A["보상 작업 접수"] --> B{"실행 중 작업이<br/>1,500개 미만?"}
-    B -->|아니오| C["Runnable 큐 대기<br/>스레드 생성 전"]
-    B -->|예| D["새 버추얼 스레드 생성"]
-    D --> E["DB 요청 준비"]
-    E --> F["블록체인 배치 큐에 요청 적재<br/>가상 스레드는 Future 결과 대기"]
-    F -->|배치 처리 신호| H["배치 소비자<br/>최대 40건씩 순차 전송"]
-    H --> R["응답 처리·요청별 Future 완료"]
-
-    R -->|결과 전달| G["버추얼 스레드<br/>결과 수신·대기 해제"]
-    G --> I["결과 반영·작업 종료<br/>실행 중 작업 수 감소"]
-    I --> J{"Runnable 큐에<br/>대기 작업 있음?"}
-    J -->|있음| K["Runnable 큐에서 다음 작업 꺼내기"]
-    C -.->|대기 작업 제공| K
-    K --> D
-    J -->|없음| L["추가 보상 작업 실행 없음"]
-
-    R -->|소비자 처리 계속| M{"블록체인 배치 큐에<br/>대기 요청 있음?"}
-    M -->|있음| H
-    M -->|없음| N["새 배치 처리 신호 대기"]
-```
+![버추얼 스레드 기반 보상 작업 처리 구조](assets/diagrams/diagram-05.svg)
 
 
 
@@ -273,16 +209,7 @@ flowchart TB
 
 ### 결제 처리 흐름
 
-```mermaid
-flowchart TB
-    A["결제 준비 API<br/>주문·블록체인 요청 식별자 연결 · PENDING"] --> B["사용자 서명 생성 API<br/>Redis에 TTL 기반 임시 보관"]
-    B --> C["쇼핑몰 결제 확정 Webhook"]
-    C --> D{"주문 상태·서명 확인"}
-    D -->|이미 PAID| E["차감 재실행 없이 기존 결과 반환"]
-    D -->|PENDING · 서명 있음| F["저장된 서명으로 블록체인 차감"]
-    F -->|성공| G["PAID 반영 · Redis 서명 삭제"]
-    D -->|PENDING · 서명 없음| H["EXPIRED 반영"]
-```
+![외부 쇼핑몰 결제 처리 흐름](assets/diagrams/diagram-06.svg)
 
 
 
@@ -298,13 +225,7 @@ flowchart TB
 
 ### 환불 처리 흐름
 
-```mermaid
-flowchart TB
-    A["환불 요청 · 주문별 잠금 획득"] --> B["최신 상태·누적 환불액 조회<br/>환불 가능 금액 검증"]
-    B --> C["블록체인 포인트 복원"]
-    C -->|성공| D["환불 이력 저장·결제 상태 반영"]
-    D --> E["잠금 해제"]
-```
+![외부 쇼핑몰 환불 처리 흐름](assets/diagrams/diagram-07.svg)
 
 ### 적용 결과
 
@@ -332,27 +253,7 @@ flowchart TB
 
 ### 개선 전·후
 
-```mermaid
-%%{init: {"theme":"neutral","flowchart":{"curve":"linear"},"themeVariables":{"primaryColor":"#FFFFFF","primaryBorderColor":"#CBD5E1","lineColor":"#64748B","primaryTextColor":"#1F2937"}}}%%
-flowchart TB
-    subgraph OLD["개선 전 · 외부 호출까지 하나의 DB 트랜잭션"]
-        direction LR
-        O1["행 잠금·DB 처리"] --> O2["블록체인 조회·차감"]
-        O2 --> O3["커밋·잠금 해제"]
-    end
-
-    subgraph NEW["개선 후 · DB 트랜잭션 분리"]
-        direction LR
-        N1["조건부 UPDATE · 정원 확보 요청 직렬화<br/>참가 저장·커밋·잠금 해제"] --> N2["블록체인 차감"]
-        N2 --> N3["성공 상태 반영 또는 참가 취소<br/>커밋"]
-    end
-
-    OLD -->|트랜잭션 범위 축소| NEW
-    style OLD fill:#F8FAFC,stroke:#94A3B8
-    style NEW fill:#FFFFFF,stroke:#CBD5E1
-    style N1 fill:#EFF6FF,stroke:#3B82F6
-    style N3 fill:#EFF6FF,stroke:#3B82F6
-```
+![선착순 이벤트 참가 처리 개선 전후](assets/diagrams/diagram-08.svg)
 
 **변경점:** 정원 확보 요청은 직렬화하고, 블록체인 응답 대기는 DB 쓰기 트랜잭션에서 분리했다.
 
@@ -374,37 +275,7 @@ flowchart TB
 
 ### 최종 처리 흐름
 
-```mermaid
-%%{init: {"theme":"neutral","themeVariables":{"actorBkg":"#FFFFFF","actorBorder":"#CBD5E1","actorTextColor":"#1F2937","signalColor":"#64748B","signalTextColor":"#1F2937","noteBkgColor":"#FFFFFF","noteBorderColor":"#CBD5E1"},"sequence":{"mirrorActors":false}}}%%
-sequenceDiagram
-    participant U as 사용자
-    participant A as API 서버
-    participant D as DB
-    participant B as 블록체인
-
-    U->>A: 챌린지 참가 요청
-    rect rgb(239, 246, 255)
-        A->>D: [짧은 트랜잭션 ①] 정원 확보
-        A->>D: 조건부 UPDATE
-        D-->>A: 정원 확보 성공
-        A->>D: 참가 저장 · status = PROCESSING · COMMIT
-        D-->>A: 커밋 완료 · 행 잠금 해제
-    end
-
-    A->>B: 포인트 차감
-    alt 차감 성공
-        B-->>A: 성공 확정
-        A->>D: status = BURN_COMPLETED · COMMIT
-    else 차감 확정 실패
-        B-->>A: 실패 확정
-        A->>D: 참가 취소 상태 · 정원 카운터 감소 · COMMIT
-    else 응답 타임아웃
-        B-->>A: 대기 시간 초과 · 즉시 참가 취소
-        A->>D: 참가 취소 상태 · 정원 카운터 감소 · COMMIT
-    end
-    A->>D: 결과 반영 · 짧은 DB 트랜잭션 · COMMIT
-    A-->>U: 참가 처리 결과
-```
+![선착순 이벤트 참가의 최종 처리 흐름](assets/diagrams/diagram-09.svg)
 
 **현재 한계:** 타임아웃 시 참가를 취소하고 정원을 반환한다. 이후 차감이 늦게 성공하는 경우의 별도 처리는 없어, 참가 취소와 포인트 차감 결과가 불일치할 가능성이 남아 있다.
 
