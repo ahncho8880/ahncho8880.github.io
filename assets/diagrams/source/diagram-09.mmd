@@ -17,13 +17,12 @@ sequenceDiagram
     A->>B: 포인트 차감
     alt 차감 성공
         B-->>A: 성공 확정
-        A->>D: status = BURN_COMPLETED · COMMIT
+        A->>D: [짧은 트랜잭션 ②] status = BURN_COMPLETED · COMMIT
     else 차감 확정 실패
         B-->>A: 실패 확정
-        A->>D: 참가 취소 상태 · 정원 카운터 감소 · COMMIT
+        A->>D: [짧은 트랜잭션 ②] 참가 취소 상태 · 정원 카운터 감소 · COMMIT
     else 응답 타임아웃
         B-->>A: 대기 시간 초과 · 즉시 참가 취소
-        A->>D: 참가 취소 상태 · 정원 카운터 감소 · COMMIT
+        A->>D: [짧은 트랜잭션 ②] 참가 취소 상태 · 정원 카운터 감소 · COMMIT
     end
-    A->>D: 결과 반영 · 짧은 DB 트랜잭션 · COMMIT
     A-->>U: 참가 처리 결과
