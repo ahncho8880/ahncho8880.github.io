@@ -134,7 +134,7 @@ Java·Spring 기반의 백엔드 시스템을 설계·개발하고 운영해 왔
 
 이 단계에서 실행량 제한·큐 대기·작업 격리를 적용했다. 다음 단계에서는 이 제어를 유지하면서 비동기 스레드 풀을 작업별 버추얼 스레드 방식으로 전환했다.
 
-### 1-3. Virtual Thread·Semaphore 기반 보상 실행 구조 개선
+### 1-3. Virtual Thread·Semaphore 기반 실행 구조 개선
 
 **기술 스택** Java 21 · Spring Boot 3
 
